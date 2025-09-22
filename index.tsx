@@ -2,9 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { GoogleGenAI } from "@google/genai";
 import { render } from "preact";
-import { useState, useMemo, useCallback, useEffect, useRef } from "preact/hooks";
+import { useState, useMemo, useEffect, useRef } from "preact/hooks";
 import { html } from "htm/preact";
 import jsPDF from "jspdf";
 import autoTable from 'jspdf-autotable';
@@ -42,8 +41,6 @@ interface AppSettings {
     projectManager: string;
     approverConfig: ApproverConfig;
 }
-
-const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
 
 const APPROVER_ROLES = [
     'Manager of Gas Engineering',
@@ -699,7 +696,6 @@ interface InternalApproverControl {
 
 const ChangeOrderForm = ({ order, onSave, onCancel, approverConfig }) => {
     const [formData, setFormData] = useState(order || emptyFormState);
-    const [isGenerating, setIsGenerating] = useState(false);
     const [internalApprovers, setInternalApprovers] = useState<InternalApproverControl[]>([]);
     const [thirdPartyApprovers, setThirdPartyApprovers] = useState<Approval[]>([]);
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
@@ -736,18 +732,16 @@ const ChangeOrderForm = ({ order, onSave, onCancel, approverConfig }) => {
     const handleChange = (e) => {
         const { name, value, type } = e.target;
         const isNumeric = type === 'number';
-        let processedValue = isNumeric ? parseFloat(value) : value;
-        
-        // Don't let the value be NaN if the input is cleared
-        if(isNumeric && isNaN(processedValue)) {
-            processedValue = 0;
-        }
+
+        // For numeric values, parseFloat and default to 0 if NaN (e.g., for empty string).
+        const processedValue = isNumeric ? (parseFloat(value) || 0) : value;
 
         setFormData(prev => ({ ...prev, [name]: processedValue }));
 
-        // Real-time validation
+        // Real-time validation for display: only check for negative numbers.
+        // The raw `value` (string) from the event is used here.
         if (isNumeric) {
-             if (value === '' || parseFloat(value) < 0) {
+             if (parseFloat(value) < 0) { // isNaN check is implicit, parseFloat(invalid) < 0 is false
                 setErrors(prev => ({...prev, [name]: 'Must be a non-negative number.'}));
             } else {
                 const newErrors = {...errors};
@@ -807,15 +801,26 @@ const ChangeOrderForm = ({ order, onSave, onCancel, approverConfig }) => {
     const handleSubmit = (e) => {
         e.preventDefault();
         
-        // Run a full validation check on submit
-        const currentErrors = {...errors};
-        if (!formData.title.trim()) currentErrors.title = 'Title is required.';
-        if (!formData.description.trim()) currentErrors.description = 'Description is required.';
-        if (!formData.reason.trim()) currentErrors.reason = 'Reason for change is required.';
+        // Create a copy of existing errors to update.
+        const newErrors = {...errors};
 
-        if (Object.keys(currentErrors).length > 0) {
-            setErrors(currentErrors);
-            alert('Please fix the errors before saving.');
+        // Clear previous errors for these specific fields before re-validating.
+        delete newErrors.title;
+        delete newErrors.description;
+        delete newErrors.reason;
+
+        // Re-validate the required fields and update the errors object.
+        if (!formData.title.trim()) newErrors.title = 'Title is required.';
+        if (!formData.description.trim()) newErrors.description = 'Description is required.';
+        if (!formData.reason.trim()) newErrors.reason = 'Reason for change is required.';
+        
+        // Update the state to display all current errors.
+        setErrors(newErrors);
+
+        // Block submission ONLY if one of the required text fields is empty.
+        // This allows saving even if other non-critical fields have validation errors.
+        if (!formData.title.trim() || !formData.description.trim() || !formData.reason.trim()) {
+            alert('Please fill out Title, Description, and Reason for Change before saving.');
             return;
         }
 
@@ -836,29 +841,6 @@ const ChangeOrderForm = ({ order, onSave, onCancel, approverConfig }) => {
         
         onSave({...formData, approvals: finalApprovals});
     }
-    
-    const handleAiSuggestTitle = useCallback(async () => {
-        if (!formData.description) {
-            alert("Please enter a description first.");
-            return;
-        }
-        setIsGenerating(true);
-        try {
-            const prompt = `Based on the following change order description, suggest a concise and clear title (max 10 words):\n\n"${formData.description}"`;
-            const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: prompt,
-            });
-            const suggestedTitle = response.text.trim().replace(/"/g, ''); // Clean up response
-            setFormData(prev => ({...prev, title: suggestedTitle}));
-        } catch (error) {
-            console.error("Error generating title:", error);
-            alert("Failed to generate title. Please try again.");
-        } finally {
-            setIsGenerating(false);
-        }
-
-    }, [formData.description]);
 
     const totalCost = useMemo(() => {
         return formData.costImpactEquipment + formData.costImpactInstallation + formData.costImpactOther;
@@ -869,19 +851,14 @@ const ChangeOrderForm = ({ order, onSave, onCancel, approverConfig }) => {
             <h2>${isNew ? 'Create New Change Order' : `Editing #${order.id}`}</h2>
             <div class="form-grid">
                 <div class="form-group full-width">
+                    <label for="title">Title</label>
+                    <input id="title" name="title" type="text" class=${`form-input ${errors.title ? 'is-invalid' : ''}`} required value=${formData.title} onInput=${handleChange} />
+                    ${errors.title && html`<div class="error-message">${errors.title}</div>`}
+                </div>
+                <div class="form-group full-width">
                     <label for="description">Description</label>
                     <textarea id="description" name="description" class=${`form-textarea ${errors.description ? 'is-invalid' : ''}`} required value=${formData.description} onInput=${handleChange}></textarea>
                     ${errors.description && html`<div class="error-message">${errors.description}</div>`}
-                </div>
-                 <div class="form-group full-width">
-                    <label for="title">Title</label>
-                    <div class="input-wrapper">
-                      <input id="title" name="title" type="text" class=${`form-input ${errors.title ? 'is-invalid' : ''}`} required value=${formData.title} onInput=${handleChange} />
-                      <button type="button" class="ai-button" title="AI Suggest Title" onClick=${handleAiSuggestTitle} disabled=${isGenerating}>
-                        ${isGenerating ? html`<svg class="spinner" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor" width="24" height="24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" opacity=".25"></path><path d="M12 4a8 8 0 0 1 8 8h-2a6 6 0 0 0-6-6z"></path></svg>` : html`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM9.873 18.313l-.127-.127a.75.75 0 0 1 0-1.061L12.189 14.7l-2.006-2.005a.75.75 0 0 1 0-1.061l.127-.127a.75.75 0 0 1 1.06 0l2.006 2.005 2.005-2.005a.75.75 0 0 1 1.06 0l.127.127a.75.75 0 0 1 0 1.061L14.312 14.7l2.006 2.006a.75.75 0 0 1 0 1.06l-.127.127a.75.75 0 0 1-1.06 0L13.25 15.76l-2.005 2.006a.75.75 0 0 1-1.061 0l-.25-.25-.111-.11Z"></path></svg>`}
-                      </button>
-                    </div>
-                     ${errors.title && html`<div class="error-message">${errors.title}</div>`}
                 </div>
                 <div class="form-group full-width">
                     <label for="reason">Reason for Change</label>
@@ -907,17 +884,17 @@ const ChangeOrderForm = ({ order, onSave, onCancel, approverConfig }) => {
                 <h3 class="form-section-title">Impact Analysis</h3>
                 <div class="form-group">
                     <label for="costImpactEquipment">Equipment Cost</label>
-                    <input id="costImpactEquipment" name="costImpactEquipment" type="number" step="0.01" min="0" class=${`form-input ${errors.costImpactEquipment ? 'is-invalid' : ''}`} value=${formData.costImpactEquipment} onInput=${handleChange} />
+                    <input id="costImpactEquipment" name="costImpactEquipment" type="number" step="0.01" min="0" class=${`form-input ${errors.costImpactEquipment ? 'is-invalid' : ''}`} value=${formData.costImpactEquipment || ''} onInput=${handleChange} />
                     ${errors.costImpactEquipment && html`<div class="error-message">${errors.costImpactEquipment}</div>`}
                 </div>
                 <div class="form-group">
                     <label for="costImpactInstallation">Installation Cost</label>
-                    <input id="costImpactInstallation" name="costImpactInstallation" type="number" step="0.01" min="0" class=${`form-input ${errors.costImpactInstallation ? 'is-invalid' : ''}`} value=${formData.costImpactInstallation} onInput=${handleChange} />
+                    <input id="costImpactInstallation" name="costImpactInstallation" type="number" step="0.01" min="0" class=${`form-input ${errors.costImpactInstallation ? 'is-invalid' : ''}`} value=${formData.costImpactInstallation || ''} onInput=${handleChange} />
                      ${errors.costImpactInstallation && html`<div class="error-message">${errors.costImpactInstallation}</div>`}
                 </div>
                 <div class="form-group">
                     <label for="costImpactOther">Other Costs</label>
-                    <input id="costImpactOther" name="costImpactOther" type="number" step="0.01" min="0" class=${`form-input ${errors.costImpactOther ? 'is-invalid' : ''}`} value=${formData.costImpactOther} onInput=${handleChange} />
+                    <input id="costImpactOther" name="costImpactOther" type="number" step="0.01" min="0" class=${`form-input ${errors.costImpactOther ? 'is-invalid' : ''}`} value=${formData.costImpactOther || ''} onInput=${handleChange} />
                     ${errors.costImpactOther && html`<div class="error-message">${errors.costImpactOther}</div>`}
                 </div>
                  <div class="form-group">
@@ -934,7 +911,7 @@ const ChangeOrderForm = ({ order, onSave, onCancel, approverConfig }) => {
 
                 <div class="form-group">
                     <label for="scheduleImpactDays">Schedule Impact (Days)</label>
-                    <input id="scheduleImpactDays" name="scheduleImpactDays" type="number" min="0" class=${`form-input ${errors.scheduleImpactDays ? 'is-invalid' : ''}`} value=${formData.scheduleImpactDays} onInput=${handleChange} />
+                    <input id="scheduleImpactDays" name="scheduleImpactDays" type="number" min="0" class=${`form-input ${errors.scheduleImpactDays ? 'is-invalid' : ''}`} value=${formData.scheduleImpactDays || ''} onInput=${handleChange} />
                     ${errors.scheduleImpactDays && html`<div class="error-message">${errors.scheduleImpactDays}</div>`}
                 </div>
                 <div class="form-group full-width"></div>
@@ -997,7 +974,7 @@ const ChangeOrderForm = ({ order, onSave, onCancel, approverConfig }) => {
                 
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onClick=${onCancel}>Cancel</button>
-                    <button type="submit" class="btn btn-primary" disabled=${Object.keys(errors).length > 0}>Save Changes</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
                 </div>
             </div>
         </form>

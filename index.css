@@ -265,12 +265,6 @@ html, body {
     color: var(--text-secondary);
 }
 
-.form-group .input-wrapper {
-    position: relative;
-    display: flex;
-    align-items: center;
-}
-
 .form-input, .form-textarea, .form-select {
     width: 100%;
     padding: 0.75rem;
@@ -298,30 +292,6 @@ html, body {
 .form-textarea {
     resize: vertical;
     min-height: 120px;
-}
-
-.form-group .ai-button {
-    position: absolute;
-    right: 10px;
-    background: none;
-    border: none;
-    color: var(--accent-secondary);
-    cursor: pointer;
-    padding: 5px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background-color 0.2s;
-}
-
-.form-group .ai-button:hover:not(:disabled) {
-    background-color: rgba(80, 227, 194, 0.1);
-}
-
-.form-group .ai-button svg {
-    width: 20px;
-    height: 20px;
 }
 
 .form-section-title {
@@ -401,14 +371,6 @@ html, body {
     justify-content: flex-end;
     gap: 1rem;
     margin-top: 1rem;
-}
-.spinner {
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
 }
 
 /* Validation Styles */
