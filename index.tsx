@@ -39,6 +39,7 @@ type ApproverConfig = { [role: string]: string };
 interface AppSettings {
     projectName: string;
     projectLocation: string;
+    projectManager: string;
     approverConfig: ApproverConfig;
 }
 
@@ -67,21 +68,26 @@ const getStatusColor = (status: ChangeOrderStatus | ApprovalStatus) => {
 };
 
 // --- PDF GENERATION ---
-const generatePdfReport = (changeOrders: ChangeOrder[], projectName: string, projectLocation: string) => {
+const generatePdfReport = (changeOrders: ChangeOrder[], projectName: string, projectLocation: string, projectManager: string) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     const pageHeight = doc.internal.pageSize.height;
     const margin = 15;
 
     // --- TITLE PAGE ---
+    doc.setFontSize(32);
+    doc.text('UNITIL', pageWidth / 2, pageHeight / 2 - 40, { align: 'center' });
     doc.setFontSize(26);
-    doc.text('Change Order Report', pageWidth / 2, pageHeight / 2 - 30, { align: 'center' });
+    doc.text('Change Order Report', pageWidth / 2, pageHeight / 2 - 20, { align: 'center' });
     doc.setFontSize(16);
-    doc.text(`Project: ${projectName || 'Not Specified'}`, pageWidth / 2, pageHeight / 2 - 10, { align: 'center' });
+    doc.text(`Project: ${projectName || 'Not Specified'}`, pageWidth / 2, pageHeight / 2, { align: 'center' });
     doc.setFontSize(14);
-    doc.text(`Location: ${projectLocation || 'Not Specified'}`, pageWidth / 2, pageHeight / 2 + 5, { align: 'center' });
+    doc.text(`Location: ${projectLocation || 'Not Specified'}`, pageWidth / 2, pageHeight / 2 + 15, { align: 'center' });
     doc.setFontSize(12);
-    doc.text(`Report Generation Date: ${new Date().toLocaleDateString()}`, pageWidth / 2, pageHeight / 2 + 20, { align: 'center' });
+    doc.text(`Report Generation Date: ${new Date().toLocaleDateString()}`, pageWidth / 2, pageHeight / 2 + 30, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text(`Project Manager: ${projectManager || 'Not Specified'}`, pageWidth / 2, pageHeight / 2 + 45, { align: 'center' });
+
 
     // --- SUMMARY SECTION ---
     if (changeOrders.length > 0) {
@@ -250,6 +256,7 @@ const App = () => {
     const [settings, setSettings] = useState<AppSettings>({
         projectName: '',
         projectLocation: '',
+        projectManager: '',
         approverConfig: {}
     });
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -439,6 +446,7 @@ const App = () => {
                         changeOrders=${changeOrders} 
                         projectName=${settings.projectName}
                         projectLocation=${settings.projectLocation}
+                        projectManager=${settings.projectManager}
                         selectedOrderIds=${selectedOrderIds}
                         setSelectedOrderIds=${setSelectedOrderIds}
                         onCreate=${handleCreateNew}
@@ -526,6 +534,10 @@ const SettingsModal = ({ settings, onSave, onClose }) => {
                         <label for="projectLocation">Project Location</label>
                         <input id="projectLocation" type="text" class="form-input" value=${localSettings.projectLocation} onInput=${e => handleChange('projectLocation', e.target.value)} />
                     </div>
+                    <div class="form-group">
+                        <label for="projectManager">Project Manager Name</label>
+                        <input id="projectManager" type="text" class="form-input" value=${localSettings.projectManager || ''} onInput=${e => handleChange('projectManager', e.target.value)} />
+                    </div>
 
                     <h3 class="form-section-title">Approver Names</h3>
                     ${APPROVER_ROLES.map(role => html`
@@ -550,13 +562,13 @@ const SettingsModal = ({ settings, onSave, onClose }) => {
     `;
 };
 
-const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, onEdit, onCreate, onDeleteSelected, onExportProject, onImportProject, onConfigure, selectedOrderIds, setSelectedOrderIds }) => {
+const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, projectManager, onEdit, onCreate, onDeleteSelected, onExportProject, onImportProject, onConfigure, selectedOrderIds, setSelectedOrderIds }) => {
     const handleGenerateReport = () => {
         if (changeOrders.length === 0) {
             alert("There are no change orders to report.");
             return;
         }
-        generatePdfReport(changeOrders, projectName, projectLocation);
+        generatePdfReport(changeOrders, projectName, projectLocation, projectManager);
     };
 
     const handleSelectAll = (e: preact.JSX.TargetedEvent<HTMLInputElement, Event>) => {
