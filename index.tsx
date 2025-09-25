@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { render } from "preact";
+// FIX: Import JSX type to resolve 'preact.JSX' namespace errors.
+import type { JSX } from "preact";
 import { useState, useMemo, useEffect, useRef } from "preact/hooks";
 import { html } from "htm/preact";
 import jsPDF from "jspdf";
@@ -73,17 +75,29 @@ const generatePdfReport = (changeOrders: ChangeOrder[], projectName: string, pro
 
     // --- TITLE PAGE ---
     doc.setFontSize(32);
-    doc.text('UNITIL', pageWidth / 2, pageHeight / 2 - 40, { align: 'center' });
+    doc.text('UNITIL', pageWidth / 2, 60, { align: 'center' });
     doc.setFontSize(26);
-    doc.text('Change Order Report', pageWidth / 2, pageHeight / 2 - 20, { align: 'center' });
-    doc.setFontSize(16);
-    doc.text(`Project: ${projectName || 'Not Specified'}`, pageWidth / 2, pageHeight / 2, { align: 'center' });
-    doc.setFontSize(14);
-    doc.text(`Location: ${projectLocation || 'Not Specified'}`, pageWidth / 2, pageHeight / 2 + 15, { align: 'center' });
-    doc.setFontSize(12);
-    doc.text(`Report Generation Date: ${new Date().toLocaleDateString()}`, pageWidth / 2, pageHeight / 2 + 30, { align: 'center' });
-    doc.setFontSize(12);
-    doc.text(`Project Manager: ${projectManager || 'Not Specified'}`, pageWidth / 2, pageHeight / 2 + 45, { align: 'center' });
+    doc.text('Change Order Report', pageWidth / 2, 80, { align: 'center' });
+
+    const projectDetails = [
+        ['Project Name:', projectName || 'Not Specified'],
+        ['Project Location:', projectLocation || 'Not Specified'],
+        ['Project Manager:', projectManager || 'Not Specified'],
+        ['Report Date:', new Date().toLocaleDateString()]
+    ];
+
+    autoTable(doc, {
+        body: projectDetails,
+        startY: 100,
+        theme: 'plain',
+        styles: { fontSize: 12, cellPadding: 3 },
+        columnStyles: {
+            0: { fontStyle: 'bold' },
+        },
+        // Center the table on the page
+        tableWidth: 'auto',
+        margin: { left: margin },
+    });
 
 
     // --- SUMMARY SECTION ---
@@ -213,6 +227,22 @@ const generatePdfReport = (changeOrders: ChangeOrder[], projectName: string, pro
             headStyles: { fillColor: [42, 42, 42] },
         });
     });
+
+    // --- PAGE NUMBERING ---
+    // FIX: The `getNumberOfPages` method is part of the public jsPDF API and should be called on the `doc` object directly, not on `doc.internal`. 
+    // This resolves the TypeScript error because the method is correctly defined on the `jsPDF` instance type.
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(10);
+        doc.setTextColor(150);
+        doc.text(
+            `Page ${i} of ${pageCount}`,
+            pageWidth / 2,
+            pageHeight - 10,
+            { align: 'center' }
+        );
+    }
 
     // --- SAVE FILE ---
     doc.save('Change_Order_Report.pdf');
@@ -371,7 +401,8 @@ const App = () => {
         fileInputRef.current?.click();
     };
 
-    const handleFileImport = (event: preact.JSX.TargetedEvent<HTMLInputElement, Event>) => {
+    // FIX: Changed preact.JSX to JSX after importing it.
+    const handleFileImport = (event: JSX.TargetedEvent<HTMLInputElement, Event>) => {
         const target = event.target as HTMLInputElement;
         const file = target.files?.[0];
         if (!file) {
@@ -568,7 +599,8 @@ const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, projectM
         generatePdfReport(changeOrders, projectName, projectLocation, projectManager);
     };
 
-    const handleSelectAll = (e: preact.JSX.TargetedEvent<HTMLInputElement, Event>) => {
+    // FIX: Changed preact.JSX to JSX after importing it.
+    const handleSelectAll = (e: JSX.TargetedEvent<HTMLInputElement, Event>) => {
         const isChecked = (e.target as HTMLInputElement).checked;
         if (isChecked) {
             const allIds = new Set(changeOrders.map(co => co.id));
@@ -578,7 +610,8 @@ const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, projectM
         }
     };
 
-    const handleSelectSingle = (e: preact.JSX.TargetedEvent<HTMLInputElement, Event>, id: number) => {
+    // FIX: Changed preact.JSX to JSX after importing it.
+    const handleSelectSingle = (e: JSX.TargetedEvent<HTMLInputElement, Event>, id: number) => {
         const isChecked = (e.target as HTMLInputElement).checked;
         setSelectedOrderIds(prev => {
             const newSet = new Set(prev);
@@ -590,6 +623,12 @@ const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, projectM
             return newSet;
         });
     };
+
+    const totalCostImpact = useMemo(() => {
+        return changeOrders.reduce((total, order) => {
+            return total + order.costImpactEquipment + order.costImpactInstallation + order.costImpactOther;
+        }, 0);
+    }, [changeOrders]);
 
 
     return html`
@@ -669,6 +708,15 @@ const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, projectM
                             `;
                         })}
                     </tbody>
+                     ${changeOrders.length > 0 && html`
+                        <tfoot>
+                            <tr>
+                                <td colSpan="5" class="total-label">Total Cost Impact</td>
+                                <td class="total-value">${formatCurrency(totalCostImpact)}</td>
+                                <td colSpan="2"></td>
+                            </tr>
+                        </tfoot>
+                    `}
                 </table>
                  ${changeOrders.length === 0 && html`
                     <div class="placeholder-table">
