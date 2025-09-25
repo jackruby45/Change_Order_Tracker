@@ -251,7 +251,7 @@ const generatePdfReport = (changeOrders: ChangeOrder[], projectName: string, pro
 
 // --- COMPONENTS ---
 
-const ConfirmModal = ({ isOpen, onClose, onConfirm, title, children }) => {
+const ConfirmModal = ({ isOpen, onClose, onConfirm, title, children, confirmText = 'Confirm', confirmClass = 'btn-primary' }) => {
     if (!isOpen) return null;
 
     return html`
@@ -266,7 +266,59 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, children }) => {
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onClick=${onClose}>Cancel</button>
-                    <button type="button" class="btn btn-danger" onClick=${onConfirm}>Confirm Delete</button>
+                    <button type="button" class="btn ${confirmClass}" onClick=${onConfirm}>${confirmText}</button>
+                </div>
+            </div>
+        </div>
+    `;
+};
+
+const PasswordModal = ({ isOpen, onClose, onConfirm, title }) => {
+    if (!isOpen) return null;
+    const [password, setPassword] = useState('');
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const handleSubmit = () => {
+        onConfirm(password);
+        setPassword('');
+    };
+    
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            handleSubmit();
+        }
+    };
+
+    useEffect(() => {
+        if (isOpen) {
+            setTimeout(() => inputRef.current?.focus(), 0);
+        }
+    }, [isOpen]);
+
+    return html`
+        <div class="modal-overlay" onClick=${onClose}>
+            <div class="modal-content" onClick=${e => e.stopPropagation()}>
+                <div class="modal-header">
+                    <h2>${title}</h2>
+                    <button class="btn-close" onClick=${onClose}>×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="admin-password">Password</label>
+                        <input 
+                            ref=${inputRef}
+                            id="admin-password" 
+                            type="password" 
+                            class="form-input" 
+                            value=${password} 
+                            onInput=${e => setPassword(e.target.value)}
+                            onKeyDown=${handleKeyDown}
+                        />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onClick=${onClose}>Cancel</button>
+                    <button type="button" class="btn btn-primary" onClick=${handleSubmit}>Submit</button>
                 </div>
             </div>
         </div>
@@ -279,6 +331,9 @@ const App = () => {
     const [view, setView] = useState<'table' | 'form'>('table');
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+    const [isRenumberConfirmOpen, setIsRenumberConfirmOpen] = useState(false);
+    const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+    const [isAdminMode, setIsAdminMode] = useState(false);
     const [selectedOrderIds, setSelectedOrderIds] = useState(new Set<number>());
     const [settings, setSettings] = useState<AppSettings>({
         projectName: '',
@@ -368,6 +423,29 @@ const App = () => {
         setSelectedOrderIds(new Set());
         setIsDeleteConfirmOpen(false);
     };
+
+    const handleRenumber = () => {
+        if (changeOrders.length === 0) {
+            alert("No change orders to renumber.");
+            setIsRenumberConfirmOpen(false);
+            return;
+        }
+        
+        // Sort by date requested, oldest first
+        const sortedOrders = [...changeOrders].sort((a, b) => new Date(a.dateRequested).getTime() - new Date(b.dateRequested).getTime());
+        
+        // Renumber based on sorted order
+        const renumberedOrders = sortedOrders.map((order, index) => ({
+            ...order,
+            id: index + 1
+        }));
+        
+        setChangeOrders(renumberedOrders);
+        setSelectedOrderIds(new Set()); // Clear selections as IDs have changed
+        setIsRenumberConfirmOpen(false);
+        alert(`Successfully renumbered ${renumberedOrders.length} change orders.`);
+    };
+
 
     const handleExportProject = () => {
         if (changeOrders.length === 0 && !settings.projectName) {
@@ -460,6 +538,19 @@ const App = () => {
         alert("Could not save settings.");
       }
     };
+    
+    const handleEnterAdminMode = () => {
+        setIsPasswordModalOpen(true);
+    };
+
+    const handleAdminLogin = (password: string) => {
+        if (password === "0665") {
+            setIsAdminMode(true);
+            setIsPasswordModalOpen(false);
+        } else {
+            alert("Incorrect password.");
+        }
+    };
 
 
     return html`
@@ -483,6 +574,10 @@ const App = () => {
                         onExportProject=${handleExportProject}
                         onImportProject=${handleTriggerImport}
                         onConfigure=${() => setIsSettingsOpen(true)}
+                        isAdminMode=${isAdminMode}
+                        onEnterAdminMode=${handleEnterAdminMode}
+                        onExitAdminMode=${() => setIsAdminMode(false)}
+                        onRenumber=${() => setIsRenumberConfirmOpen(true)}
                     />` :
                 view === 'form' ? html`
                     <div class="content-pane">
@@ -515,9 +610,31 @@ const App = () => {
                 onClose=${() => setIsDeleteConfirmOpen(false)}
                 onConfirm=${executeDelete}
                 title="Confirm Deletion"
+                confirmText="Confirm Delete"
+                confirmClass="btn-danger"
             >
                 <p>Are you sure you want to permanently delete ${selectedOrderIds.size} change order(s)? This action cannot be undone.</p>
             <//>
+        `}
+        ${isRenumberConfirmOpen && html`
+            <${ConfirmModal}
+                isOpen=${isRenumberConfirmOpen}
+                onClose=${() => setIsRenumberConfirmOpen(false)}
+                onConfirm=${handleRenumber}
+                title="Confirm Mass Renumbering"
+                confirmText="Yes, Renumber All"
+                confirmClass="btn-danger"
+            >
+                <p>Are you sure you want to renumber all change orders? This will sort all orders by date requested (oldest first) and reassign their CO #s starting from 1. This action cannot be undone.</p>
+            <//>
+        `}
+        ${isPasswordModalOpen && html`
+            <${PasswordModal}
+                isOpen=${isPasswordModalOpen}
+                onClose=${() => setIsPasswordModalOpen(false)}
+                onConfirm=${handleAdminLogin}
+                title="Enter Admin Password"
+            />
         `}
     `;
 };
@@ -590,7 +707,64 @@ const SettingsModal = ({ settings, onSave, onClose }) => {
     `;
 };
 
-const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, projectManager, onEdit, onCreate, onDeleteSelected, onExportProject, onImportProject, onConfigure, selectedOrderIds, setSelectedOrderIds }) => {
+const ChangeOrderTable = ({ 
+    changeOrders, projectName, projectLocation, projectManager, onEdit, onCreate, 
+    onDeleteSelected, onExportProject, onImportProject, onConfigure, 
+    selectedOrderIds, setSelectedOrderIds, isAdminMode, onEnterAdminMode, onExitAdminMode, onRenumber 
+}) => {
+    
+    const [filters, setFilters] = useState({
+        id: '',
+        title: '',
+        status: 'All',
+        dateRequested: '',
+        costMin: '',
+        costMax: '',
+        scheduleMin: '',
+        scheduleMax: '',
+    });
+
+    const handleFilterChange = (e) => {
+        const { name, value } = e.target;
+        setFilters(prev => ({ ...prev, [name]: value }));
+    };
+
+    const clearFilters = () => {
+        setFilters({
+            id: '',
+            title: '',
+            status: 'All',
+            dateRequested: '',
+            costMin: '',
+            costMax: '',
+            scheduleMin: '',
+            scheduleMax: '',
+        });
+    };
+    
+    const filteredChangeOrders = useMemo(() => {
+        return changeOrders.filter(co => {
+            const totalCost = co.costImpactEquipment + co.costImpactInstallation + co.costImpactOther;
+            
+            const idMatch = filters.id ? co.id.toString().includes(filters.id) : true;
+            const titleMatch = filters.title ? co.title.toLowerCase().includes(filters.title.toLowerCase()) : true;
+            const statusMatch = filters.status !== 'All' ? co.status === filters.status : true;
+            const dateMatch = filters.dateRequested ? new Date(co.dateRequested) >= new Date(filters.dateRequested) : true;
+            
+            const costMin = parseFloat(filters.costMin);
+            const costMax = parseFloat(filters.costMax);
+            const costMinMatch = !isNaN(costMin) ? totalCost >= costMin : true;
+            const costMaxMatch = !isNaN(costMax) ? totalCost <= costMax : true;
+
+            const scheduleMin = parseInt(filters.scheduleMin, 10);
+            const scheduleMax = parseInt(filters.scheduleMax, 10);
+            const scheduleMinMatch = !isNaN(scheduleMin) ? co.scheduleImpactDays >= scheduleMin : true;
+            const scheduleMaxMatch = !isNaN(scheduleMax) ? co.scheduleImpactDays <= scheduleMax : true;
+
+            return idMatch && titleMatch && statusMatch && dateMatch && costMinMatch && costMaxMatch && scheduleMinMatch && scheduleMaxMatch;
+        });
+    }, [changeOrders, filters]);
+    
     const handleGenerateReport = () => {
         if (changeOrders.length === 0) {
             alert("There are no change orders to report.");
@@ -599,15 +773,17 @@ const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, projectM
         generatePdfReport(changeOrders, projectName, projectLocation, projectManager);
     };
 
-    // FIX: Changed preact.JSX to JSX after importing it.
     const handleSelectAll = (e: JSX.TargetedEvent<HTMLInputElement, Event>) => {
         const isChecked = (e.target as HTMLInputElement).checked;
-        if (isChecked) {
-            const allIds = new Set(changeOrders.map(co => co.id));
-            setSelectedOrderIds(allIds);
-        } else {
-            setSelectedOrderIds(new Set());
-        }
+        setSelectedOrderIds(prevSelected => {
+            const newSelected = new Set(prevSelected);
+            if (isChecked) {
+                filteredChangeOrders.forEach(co => newSelected.add(co.id));
+            } else {
+                filteredChangeOrders.forEach(co => newSelected.delete(co.id));
+            }
+            return newSelected;
+        });
     };
 
     // FIX: Changed preact.JSX to JSX after importing it.
@@ -624,11 +800,23 @@ const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, projectM
         });
     };
 
+    const allFilteredIds = useMemo(() => new Set(filteredChangeOrders.map(co => co.id)), [filteredChangeOrders]);
+    
+    const isSelectAllChecked = useMemo(() => {
+        if (allFilteredIds.size === 0) return false;
+        for (const id of allFilteredIds) {
+            if (!selectedOrderIds.has(id)) {
+                return false;
+            }
+        }
+        return true;
+    }, [selectedOrderIds, allFilteredIds]);
+
     const totalCostImpact = useMemo(() => {
-        return changeOrders.reduce((total, order) => {
+        return filteredChangeOrders.reduce((total, order) => {
             return total + order.costImpactEquipment + order.costImpactInstallation + order.costImpactOther;
         }, 0);
-    }, [changeOrders]);
+    }, [filteredChangeOrders]);
 
 
     return html`
@@ -649,6 +837,12 @@ const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, projectM
                         </svg>
                         Settings
                     </button>
+                    ${isAdminMode ? html`
+                        <button type="button" class="btn btn-warning" onClick=${onRenumber}>Renumber All COs</button>
+                        <button type="button" class="btn btn-secondary" onClick=${onExitAdminMode}>Exit Admin Mode</button>
+                    ` : html `
+                        <button type="button" class="btn btn-secondary" onClick=${onEnterAdminMode}>Admin Actions</button>
+                    `}
                     <button type="button" class="btn btn-secondary" onClick=${onExportProject}>Export Project</button>
                     <button type="button" class="btn btn-secondary" onClick=${onImportProject}>Import Project</button>
                     <button type="button" class="btn btn-secondary" onClick=${handleGenerateReport}>
@@ -661,6 +855,37 @@ const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, projectM
                     <button type="button" class="btn btn-primary" onClick=${onCreate}>+ Add New Change Order</button>
                 </div>
             </header>
+            <div class="filter-bar">
+                <div class="filter-group">
+                    <input type="text" name="id" class="filter-input" placeholder="CO #" value=${filters.id} onInput=${handleFilterChange} />
+                    <input type="text" name="title" class="filter-input" placeholder="Title contains..." value=${filters.title} onInput=${handleFilterChange} />
+                    <select name="status" class="filter-select" value=${filters.status} onChange=${handleFilterChange}>
+                        <option value="All">All Statuses</option>
+                        <option>Pending Approval</option>
+                        <option>Approved</option>
+                        <option>Rejected</option>
+                        <option>In Progress</option>
+                        <option>Completed</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Date after:</label>
+                    <input type="date" name="dateRequested" class="filter-input" value=${filters.dateRequested} onInput=${handleFilterChange} />
+                </div>
+                <div class="filter-group">
+                    <label>Cost:</label>
+                    <input type="number" name="costMin" class="filter-input" placeholder="Min" value=${filters.costMin} onInput=${handleFilterChange} />
+                    <span>-</span>
+                    <input type="number" name="costMax" class="filter-input" placeholder="Max" value=${filters.costMax} onInput=${handleFilterChange} />
+                </div>
+                <div class="filter-group">
+                    <label>Schedule (days):</label>
+                    <input type="number" name="scheduleMin" class="filter-input" placeholder="Min" value=${filters.scheduleMin} onInput=${handleFilterChange} />
+                    <span>-</span>
+                    <input type="number" name="scheduleMax" class="filter-input" placeholder="Max" value=${filters.scheduleMax} onInput=${handleFilterChange} />
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" onClick=${clearFilters}>Clear Filters</button>
+            </div>
             <div class="table-container">
                 <table class="change-order-table">
                     <thead>
@@ -668,7 +893,7 @@ const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, projectM
                             <th>
                                 <input
                                     type="checkbox"
-                                    checked=${changeOrders.length > 0 && selectedOrderIds.size === changeOrders.length}
+                                    checked=${isSelectAllChecked}
                                     onChange=${handleSelectAll}
                                     aria-label="Select all change orders"
                                 />
@@ -683,7 +908,7 @@ const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, projectM
                         </tr>
                     </thead>
                     <tbody>
-                        ${changeOrders.map(co => {
+                        ${filteredChangeOrders.map(co => {
                             const totalCost = co.costImpactEquipment + co.costImpactInstallation + co.costImpactOther;
                             return html`
                                 <tr key=${co.id} class=${selectedOrderIds.has(co.id) ? 'selected-row' : ''}>
@@ -708,16 +933,21 @@ const ChangeOrderTable = ({ changeOrders, projectName, projectLocation, projectM
                             `;
                         })}
                     </tbody>
-                     ${changeOrders.length > 0 && html`
+                     ${filteredChangeOrders.length > 0 && html`
                         <tfoot>
                             <tr>
-                                <td colSpan="5" class="total-label">Total Cost Impact</td>
+                                <td colSpan="5" class="total-label">Total (Filtered)</td>
                                 <td class="total-value">${formatCurrency(totalCostImpact)}</td>
                                 <td colSpan="2"></td>
                             </tr>
                         </tfoot>
                     `}
                 </table>
+                 ${filteredChangeOrders.length === 0 && changeOrders.length > 0 && html`
+                    <div class="placeholder-table">
+                        <p>No change orders match the current filters.</p>
+                    </div>
+                 `}
                  ${changeOrders.length === 0 && html`
                     <div class="placeholder-table">
                         <p>No change orders found. Click "+ Add New Change Order" to get started or import a project file.</p>
